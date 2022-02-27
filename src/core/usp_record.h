@@ -1,7 +1,7 @@
 /*
  *
- * Copyright (C) 2019, Broadband Forum
- * Copyright (C) 2016-2019  CommScope, Inc
+ * Copyright (C) 2022, Broadband Forum
+ * Copyright (C) 2022, Snom Technology GmbH
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -33,29 +33,23 @@
  */
 
 /**
- * \file os_utils.h
+ * \file usp_record.h
  *
- * Header file for API to wrapper functions around POSIX Operating System functions, such as creating threads
+ * Header file for USP Record definitions and helpers
  *
  */
-#ifndef OS_UTILS_H
-#define OS_UTILS_H
+#ifndef USP_RECORDS_H
+#define USP_RECORDS_H
 
-#include <pthread.h>
+#include "common_defs.h"
+#include "usp-record.pb-c.h"
+#include "mqtt.h"
 
-//-------------------------------------------------------------------------
-// Defines for 'print_warning' argument for OS_UTILS_IsDataModelThread()
-#define PRINT_WARNING true
-#define DONT_PRINT_WARNING false
-
-//-------------------------------------------------------------------------
-// API functions
-int OS_UTILS_CreateThread(const char* name, void *(* start_routine)(void *), void *args);
-void OS_UTILS_SetDataModelThread(void);
-bool OS_UTILS_IsDataModelThread(const char *caller, bool print_warning);
-int OS_UTILS_InitMutex(pthread_mutex_t *mutex);
-void OS_UTILS_LockMutex(pthread_mutex_t *mutex);
-void OS_UTILS_UnlockMutex(pthread_mutex_t *mutex);
+//------------------------------------------------------------------------------
+// API
+UspRecord__Record *USPREC_WebSocketConnect_Create(void);
+UspRecord__Record *USPREC_MqttConnect_Create(mqtt_protocolver_t version, char* topic);
+UspRecord__Record *USPREC_StompConnect_Create(char* destination);
+UspRecord__Record *USPREC_Disconnect_Create(uint32_t reason_code, char* reason_str);
 
 #endif
-

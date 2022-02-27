@@ -109,6 +109,7 @@ int NotifyChange_MQTTCleanSession(dm_req_t *req, char *value);
 int NotifyChange_MQTTCleanStart(dm_req_t *req, char *value);
 int NotifyChange_MQTTRequestResponseInfo(dm_req_t *req, char *value);
 int NotifyChange_MQTTRequestProblemInfo(dm_req_t *req, char *value);
+int Get_MqttResponseInformation(dm_req_t *req, char *buf, int len);
 #if 0
 // TODO: Removed as these are not yet used
 int NotifyChange_MQTTSessionExpiryInterval(dm_req_t *req, char *value);
@@ -257,7 +258,7 @@ int DEVICE_MQTT_Init(void)
     err |= USP_REGISTER_DBParam_ReadWrite(DEVICE_MQTT_CLIENT ".{i}.ConnectRetryIntervalMultiplier", "2000", Validate_MQTTConnectRetryIntervalMultiplier, NotifyChange_MQTTConnectRetryIntervalMultiplier , DM_UINT);
     err |= USP_REGISTER_DBParam_ReadWrite(DEVICE_MQTT_CLIENT ".{i}.ConnectRetryMaxInterval", "30720", Validate_MQTTConnectRetryMaxInterval, NotifyChange_MQTTConnectRetryMaxInterval , DM_UINT);
 
-    err |= USP_REGISTER_DBParam_ReadOnly(DEVICE_MQTT_CLIENT ".{i}.ResponseInformation", "", DM_STRING);
+    err |= USP_REGISTER_VendorParam_ReadOnly(DEVICE_MQTT_CLIENT ".{i}.ResponseInformation", Get_MqttResponseInformation, DM_STRING);
     err |= USP_REGISTER_VendorParam_ReadOnly(DEVICE_MQTT_CLIENT ".{i}.Status", Get_MqttClientStatus, DM_STRING);
 
     err |= USP_REGISTER_Object(DEVICE_MQTT_CLIENT ".{i}.Subscription.{i}.", ValidateAdd_MqttClientSubscriptions, NULL, Notify_MqttClientSubcriptionsAdded,
@@ -463,6 +464,24 @@ int Get_MqttClientStatus(dm_req_t *req, char *buf, int len)
 
 /*********************************************************************//**
 **
+** Get_MqttResponseInformation
+**
+** Gets the value of Device.MQTT.Client.{i}.ResponseInformation
+**
+** \param   req - pointer to structure identifying the path
+** \param   buf - pointer to buffer into which to return the value of the parameter (as a textual string)
+** \param   len - length of buffer in which to return the value of the parameter
+**
+** \return  USP_ERR_OK if successful
+**
+**************************************************************************/
+int Get_MqttResponseInformation(dm_req_t *req, char *buf, int len)
+{
+    return MQTT_GetAgentResponseTopicDiscovered(inst1, buf, len);
+}
+
+/*********************************************************************//**
+**
 ** DEVICE_MQTT_GetMtpStatus
 **
 ** Function called to get the value of Device.LocalAgent.MTP.{i}.Status for a MTPP client**
@@ -517,42 +536,6 @@ int DEVICE_MQTT_CountEnabledConnections(void)
     return count;
 }
 
-/*********************************************************************//**
-**
-** DEVICE_MQTT_QueueBinaryMessage
-**
-** Function called to queue a message on the specified MQTT connection
-**
-** \param   usp_msg_type - Type of USP message contained in pbuf. This is used for debug logging when the message is sent by the MTP.
-** \param   instance - instance number of the MQTT connection in Device.MQTT.Client.{i}
-** \param   topic - MQTT client subscribed topic
-** \param   pbuf - pointer to buffer containing binary protobuf message. Ownership of this buffer passes to this code, if successful
-** \param   pbuf_len - length of buffer containing protobuf binary message
-**
-** \return  USP_ERR_OK if successful
-**
-**************************************************************************/
-int DEVICE_MQTT_QueueBinaryMessage(Usp__Header__MsgType usp_msg_type, int instance, char *topic, char *response_topic, unsigned char *pbuf, int pbuf_len)
-{
-    mqtt_conn_params_t *mp;
-
-    // Exit if unable to find the specified MQTT client
-    mp = FindMqttParamsByInstance(instance);
-    if ((mp == NULL) || (mp->enable == false))
-    {
-        USP_ERR_SetMessage("%s: No internal MQTT connection matching Device.MQTT.Client.%d", __FUNCTION__, instance);
-        return USP_ERR_INTERNAL_ERROR;
-    }
-
-    if (MQTT_QueueBinaryMessage(usp_msg_type, instance, topic, pbuf, pbuf_len) != USP_ERR_OK)
-    {
-        USP_ERR_SetMessage("%s: No internal MQTT Queue Binary message for topic %s", __FUNCTION__, topic);
-        return USP_ERR_INTERNAL_ERROR;
-    }
-
-    return USP_ERR_OK;
-}
-
 int ClientNumberOfEntries(void)
 {
     int clientnumofentries, err;
@@ -600,6 +583,9 @@ int ProcessMqttClientAdded(int instance)
     client_t *mqttclient;
     int i;
     int mqtt_subs_inst;
+    char buf[MAX_DM_SHORT_VALUE_LEN];
+    dm_vendor_get_mtp_username_cb_t   get_mtp_username_cb;
+    dm_vendor_get_mtp_password_cb_t   get_mtp_password_cb;
 
     // Initialise to defaults
     INT_VECTOR_Init(&iv);
@@ -658,6 +644,25 @@ int ProcessMqttClientAdded(int instance)
         goto exit;
     }
 
+    // Override a blank username in the database with that provided by a core vendor hook
+    if (mqttclient->conn_params.username[0] == '\0')
+    {
+        get_mtp_username_cb = vendor_hook_callbacks.get_mtp_username_cb;
+        if (get_mtp_username_cb != NULL)
+        {
+            // Exit if vendor hook failed
+            err = get_mtp_username_cb(instance, buf, sizeof(buf));
+            if (err != USP_ERR_OK)
+            {
+                goto exit;
+            }
+
+            // Replace the blank password from the database with the password retrieved via core vendor hook
+            USP_SAFE_FREE(mqttclient->conn_params.username);
+            mqttclient->conn_params.username = USP_STRDUP(buf);
+        }
+    }
+
     // Exit if unable to get the password for this MQTT client
     USP_SNPRINTF(path, sizeof(path), "%s.%d.Password", device_mqtt_client_root, instance);
     err = DM_ACCESS_GetPassword(path, &mqttclient->conn_params.password);
@@ -669,9 +674,6 @@ int ProcessMqttClientAdded(int instance)
     // Override a blank password in the database with that provided by a core vendor hook
     if (mqttclient->conn_params.password[0] == '\0')
     {
-        char buf[MAX_DM_SHORT_VALUE_LEN];
-        dm_vendor_get_mtp_password_cb_t   get_mtp_password_cb;
-
         get_mtp_password_cb = vendor_hook_callbacks.get_mtp_password_cb;
         if (get_mtp_password_cb != NULL)
         {
@@ -1212,10 +1214,30 @@ int NotifyChange_MQTTUsername(dm_req_t *req, char *value)
 {
     mqtt_conn_params_t *mp;
     bool schedule_reconnect = false;
+    char buf[MAX_DM_SHORT_VALUE_LEN];
+    dm_vendor_get_mtp_username_cb_t   get_mtp_username_cb;
+    int err;
 
     // Determine mqtt client to be updated
     mp = FindMqttParamsByInstance(inst1);
     USP_ASSERT(mp != NULL);
+
+    // Override a blank username in the database with that provided by a core vendor hook
+    if (*value == '\0')
+    {
+        get_mtp_username_cb = vendor_hook_callbacks.get_mtp_username_cb;
+        if (get_mtp_username_cb != NULL)
+        {
+            // Exit if vendor hook failed
+            err = get_mtp_username_cb(inst1, buf, sizeof(buf));
+            if (err != USP_ERR_OK)
+            {
+                return err;
+            }
+
+            value = buf;
+        }
+    }
 
     // Determine whether to schedule a reconnect
     if ((strcmp(mp->username, value) != 0) && (mp->enable))
@@ -2434,11 +2456,7 @@ void ScheduleMqttReconnect(mqtt_conn_params_t *mp)
     mp->response_topic = USP_STRDUP(DEVICE_MTP_GetAgentMqttResponseTopic(mp->instance));
     mp->topic = USP_STRDUP(DEVICE_CONTROLLER_GetControllerTopic(mp->instance));
 
-    if( (mp->response_topic == NULL) || (mp->topic == NULL))
-    {
-        USP_LOG_Error("%s repsonse topic or topic not found", __FUNCTION__);
-        return;
-    }
+    // NOTE: If the agent or controller topics are NULL, this is handled by the MTP layer
 
     MQTT_ScheduleReconnect(mp);
 }

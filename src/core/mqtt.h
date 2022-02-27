@@ -235,17 +235,15 @@ int MQTT_DisableClient(int instance, bool is_reconnect);
 **
 ** Queue a binary message onto an MQTT connection
 **
-** \param usp_msg_type - Type of the USP message contained in the pbuf - used for debug logging
+** \param msi - Information about the content to send. The ownership of
+**              the payload buffer is passed to this function, unless an error is returned.
 ** \param instance - instance number for the client in Device.MQTT.Client.{i}
 ** \param topic - name of the agent's MQTT topic configured for this connection in the data model
-** \param pbuf - ptr to the buffer containing the protocol buffer. Ownership of this passes to this code (on success)
-** \param pbuf_len - length of pbuf
 **
 ** \return USP_ERR_OK on success, USP_ERR_XXX otherwise
 **
 **************************************************************************/
-int MQTT_QueueBinaryMessage(Usp__Header__MsgType usp_msg_type, int instance, char *topic,
-        unsigned char *pbuf, int pbuf_len);
+int MQTT_QueueBinaryMessage(mtp_send_item_t *msi, int instance, char *topic);
 
 
 /*********************************************************************//**
@@ -450,5 +448,21 @@ void MQTT_SubscriptionReplace(mqtt_subscription_t *dest, mqtt_subscription_t *sr
 **
 **************************************************************************/
 void MQTT_SubscriptionDestroy(mqtt_subscription_t *sub);
+
+/*********************************************************************//**
+**
+** MQTT_GetAgentResponseTopicDiscovered
+**
+** Reads the value of the CONNACK Response Information property supplied by a MQTT 5.0 broker
+** If this is not available (for example not MQTT v5.0 or CONNACK not received yet) then an empty string is returned
+**
+** \param   instance - instance in Device.MQTT.Client.{i}
+** \param   buf - pointer to buffer into which to return the value of the parameter (as a textual string)
+** \param   len - length of buffer in which to return the value of the parameter
+**
+** \return  Always USP_ERR_OK - an empty string is returned if the value cannot be determined
+**
+**************************************************************************/
+int MQTT_GetAgentResponseTopicDiscovered(int instance, char *buf, int len);
 
 #endif

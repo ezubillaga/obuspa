@@ -401,7 +401,7 @@ int TEXT_UTILS_StringToBinary(char *str, unsigned char *buf, int len, int *bytes
 **
 ** \param   str - pointer to input string to convert (in base64 format)
 ** \param   buf - pointer to buffer in which to write the binary data
-** \param   len - length of the buffer
+** \param   len - length of the binary buffer
 ** \param   bytes_written - pointer to variable in which to return the number of bytes written into the buffer, or NULL if not required
 **
 ** \return  USP_ERR_OK if successful.
@@ -952,6 +952,39 @@ char *TEXT_UTILS_TrimBuffer(char *buf)
 
     // Return the first non-whitespace character in the buffer
     return first;
+}
+
+/*********************************************************************//**
+**
+** TEXT_UTILS_TrimDelimitedBuffer
+**
+** Trims the string in a buffer of leading/trailing whitespace and any quotes/brackets/braces etc by
+** truncating the string in the buffer and returning a new pointer to the start of the string in the buffer
+**
+** \param   buf - pointer to buffer containing string to trim
+** \param   delimiters - pointer to string containing two characters representing the delimiters
+**                       to remove from the start and end of the string eg [] or ""
+**
+** \return  pointer to string in buffer
+**
+**************************************************************************/
+char *TEXT_UTILS_TrimDelimitedBuffer(char *buf, char *delimiters)
+{
+    char *p;
+    int len;
+
+    // Strip leading/trailing whitespace from buffer
+    p = TEXT_UTILS_TrimBuffer(buf);
+
+    // Strip delimiters (if present) from buffer
+    len = strlen(p);
+    if ((p[0] == delimiters[0]) && (p[len-1] == delimiters[1]))
+    {
+        p[len-1] = '\0';
+        p++;
+    }
+
+    return p;
 }
 
 /*********************************************************************//**
